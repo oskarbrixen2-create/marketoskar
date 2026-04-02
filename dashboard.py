@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
-import pandas_ta as ta
 import yfinance as yf
 from datetime import datetime
 import numpy as np
@@ -10,7 +9,7 @@ from groq import Groq
 
 st.set_page_config(page_title="Aether Analyzer", layout="wide", page_icon="📈")
 st.title("🧬 Aether Analyzer — Pro Hybrid AI")
-st.caption("yfinance data + Groq sentiment + Portfolio tools • Professional & sellable")
+st.caption("yfinance data + Groq AI • Professional & sellable")
 
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
@@ -20,19 +19,22 @@ if "chat_history" not in st.session_state:
 @st.cache_data
 def get_data(ticker: str, years: int = 10):
     try:
-        ticker_obj = yf.Ticker(ticker)
-        data = ticker_obj.history(period=f"{years}y")
+        data = yf.download(ticker, period=f"{years}y", auto_adjust=True)
         data = data.dropna()
-        if isinstance(data.columns, pd.MultiIndex):
-            data = data.droplevel(0, axis=1)
         
-        data.ta.sma(length=50, append=True)
-        data.ta.rsi(length=14, append=True)
-        data.ta.macd(fast=12, slow=26, signal=9, append=True)
-        data.ta.bbands(length=20, append=True)
+        # Manual indicators (no pandas_ta)
+        data["SMA_50"] = data["Close"].rolling(50).mean()
+        delta = data["Close"].diff(1)
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = abs(delta.clip(upper=0)).rolling(14).mean()
+        data["RSI_14"] = 100 - (100 / (1 + gain / loss))
         
-        rename_map = {"MACD_12_26_9": "MACD", "BBU_20_2.0_2.0": "BB_upper", "BBL_20_2.0_2.0": "BB_lower"}
-        data = data.rename(columns=rename_map)
+        # Simple MACD
+        exp1 = data["Close"].ewm(span=12, adjust=False).mean()
+        exp2 = data["Close"].ewm(span=26, adjust=False).mean()
+        data["MACD"] = exp1 - exp2
+        
+        st.success(f"✅ Loaded {len(data)} days for {ticker}")
         return data
     except Exception:
         st.error(f"Could not load {ticker}")
@@ -92,7 +94,7 @@ def run_backtest(data):
 
 # Sidebar
 st.sidebar.header("Controls")
-ticker_input = st.sidebar.text_input("Enter tickers (comma separated)", value="AAPL, NVDA, TSLA, F, SNX", placeholder="AAPL, NVDA, F, MSFT")
+ticker_input = st.sidebar.text_input("Enter tickers (comma separated)", value="AAPL, NVDA, TSLA, F, SNX")
 tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 
 years = st.sidebar.slider("History (years)", 1, 10, 10)
@@ -210,4 +212,3 @@ Answer clearly, professionally, and data-driven."""
 
 st.sidebar.success(f"✅ Loaded {len(tickers)} tickers")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-EOF
