@@ -1,4 +1,3 @@
-cat > dashboard.py << 'EOF'
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -224,4 +223,3 @@ Answer clearly, professionally, and data-driven."""
 
 st.sidebar.success(f"✅ Loaded {len(tickers)} tickers")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-EOF
