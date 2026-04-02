@@ -1,10 +1,6 @@
 streamlit
 pandas
 plotly
-pandas_ta
 yfinance
-torch
-torchvision
-torchaudio
 groq
 numpy
