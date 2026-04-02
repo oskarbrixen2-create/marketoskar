@@ -91,10 +91,10 @@ def run_backtest(data):
     max_dd = (data['Cumulative_Strategy'] / data['Cumulative_Strategy'].cummax() - 1).min()
     
     return {
-        'total_return': total_return,
-        'buyhold_return': buyhold_return,
-        'sharpe': sharpe,
-        'max_dd': max_dd,
+        'total_return': float(total_return.item() if hasattr(total_return, 'item') else total_return),
+        'buyhold_return': float(buyhold_return.item() if hasattr(buyhold_return, 'item') else buyhold_return),
+        'sharpe': float(sharpe.item() if hasattr(sharpe, 'item') else sharpe),
+        'max_dd': float(max_dd.item() if hasattr(max_dd, 'item') else max_dd),
         'equity_curve': data[['Cumulative_Strategy', 'Cumulative_BuyHold']]
     }
 
@@ -124,10 +124,15 @@ with tab1:
                 latest = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                # ← HARDENED SCALAR FIX (this was the main crash)
+                # ← HARDENED SCALAR FIXES
                 price = float(latest['Close'].item() if hasattr(latest['Close'], 'item') else latest['Close'])
-                change = float(((latest['Close'] / prev['Close']) - 1) * 100)
-                rsi = float(latest.get('RSI_14', 50))
+                prev_price = float(prev['Close'].item() if hasattr(prev['Close'], 'item') else prev['Close'])
+                
+                change = ((price / prev_price) - 1) * 100
+                
+                rsi_raw = latest.get('RSI_14', 50)
+                rsi = float(rsi_raw.item() if hasattr(rsi_raw, 'item') else rsi_raw)
+                
                 if pd.isna(rsi):
                     rsi = 50.0
                 
@@ -141,7 +146,7 @@ with tab1:
                 rows.append([t, price, change, rsi, signal])
         
         comparison_df = pd.DataFrame(rows, columns=["Ticker", "Price", "% Change", "RSI", "Signal"])
-        st.dataframe(comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%"}), use_container_width=True)
+        st.dataframe(comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%", "RSI": "{:.1f}"}), use_container_width=True)
 
         st.subheader("Correlation & Risk Heatmap")
         prices = pd.DataFrame({t: df['Close'] for t, df in data_dict.items() if not df.empty})
@@ -197,8 +202,17 @@ with tab5:
         for t, df in data_dict.items():
             if len(df) > 1:
                 latest = df.iloc[-1]
-                change = ((latest['Close']/df.iloc[-2]['Close'])-1)*100
-                context += f"{t}: Price ${float(latest['Close']):.2f}, % Change {change:.1f}%, RSI {float(latest.get('RSI_14', 50)):.1f}\n"
+                prev = df.iloc[-2]
+                
+                # ← HARDENED SCALAR FIXES FOR LLM CONTEXT
+                curr_price = float(latest['Close'].item() if hasattr(latest['Close'], 'item') else latest['Close'])
+                prev_price = float(prev['Close'].item() if hasattr(prev['Close'], 'item') else prev['Close'])
+                change = ((curr_price / prev_price) - 1) * 100
+                
+                rsi_raw = latest.get('RSI_14', 50)
+                rsi_val = float(rsi_raw.item() if hasattr(rsi_raw, 'item') else rsi_raw)
+                
+                context += f"{t}: Price ${curr_price:.2f}, % Change {change:.1f}%, RSI {rsi_val:.1f}\n"
         
         full_prompt = f"""You have access to the following real-time portfolio data:
 {context}
