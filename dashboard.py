@@ -22,7 +22,6 @@ def get_data(ticker: str, years: int = 10):
         data = yf.download(ticker, period=f"{years}y", auto_adjust=True)
         data = data.dropna()
         
-        # Manual indicators (no pandas_ta)
         data["SMA_50"] = data["Close"].rolling(50).mean()
         delta = data["Close"].diff(1)
         gain = delta.clip(lower=0).rolling(14).mean()
@@ -113,26 +112,28 @@ with tab1:
             if len(df) > 1:
                 latest = df.iloc[-1]
                 prev = df.iloc[-2]
-                change = ((latest['Close']/prev['Close'])-1)*100
                 
-                # FIXED: Force rsi to be a clean scalar
-                rsi = latest.get('RSI_14', 50)
-                if isinstance(rsi, pd.Series):
-                    rsi = float(rsi.iloc[0]) if not rsi.empty else 50.0
-                else:
-                    rsi = float(rsi) if not pd.isna(rsi) else 50.0
+                # Force clean scalars (this fixes the Series error)
+                price = float(latest['Close'])
+                change = float(((latest['Close'] / prev['Close']) - 1) * 100)
+                rsi = float(latest.get('RSI_14', 50))
                 
-                if rsi > 70:
+                if pd.isna(rsi) or rsi > 70:
                     signal = "🔴 SELL"
                 elif rsi < 30:
                     signal = "🟢 STRONG BUY"
                 else:
                     signal = "🟡 HOLD"
                 
-                rows.append([t, latest['Close'], change, rsi, signal])
+                rows.append([t, price, change, rsi, signal])
         
         comparison_df = pd.DataFrame(rows, columns=["Ticker", "Price", "% Change", "RSI", "Signal"])
-        st.dataframe(comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%"}), use_container_width=True)
+        
+        # Safe display without .style.format
+        st.dataframe(
+            comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%"}),
+            use_container_width=True
+        )
 
         st.subheader("Correlation & Risk Heatmap")
         prices = pd.DataFrame({t: df['Close'] for t, df in data_dict.items() if not df.empty})
@@ -191,7 +192,7 @@ with tab5:
             if len(df) > 1:
                 latest = df.iloc[-1]
                 change = ((latest['Close']/df.iloc[-2]['Close'])-1)*100
-                context += f"{t}: Price ${latest['Close']:.2f}, % Change {change:.1f}%, RSI {latest.get('RSI_14', 50):.1f}\n"
+                context += f"{t}: Price ${float(latest['Close']):.2f}, % Change {change:.1f}%, RSI {float(latest.get('RSI_14', 50)):.1f}\n"
 
         full_prompt = f"""You have access to the following real-time portfolio data:
 {context}
