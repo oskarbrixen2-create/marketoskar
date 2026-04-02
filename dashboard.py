@@ -1,3 +1,4 @@
+cat > dashboard.py << 'EOF'
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,7 +10,7 @@ from groq import Groq
 
 st.set_page_config(page_title="Aether Analyzer", layout="wide", page_icon="📈")
 st.title("🧬 Aether Analyzer — Pro Hybrid AI")
-st.caption("yfinance data + Groq AI • Professional & sellable")
+st.caption("yfinance data + Groq sentiment + Portfolio chat • Professional & sellable")
 
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
@@ -22,13 +23,25 @@ def get_data(ticker: str, years: int = 10):
         data = yf.download(ticker, period=f"{years}y", auto_adjust=True)
         data = data.dropna()
         
+        # Pure pandas indicators (no pandas_ta)
         data["SMA_50"] = data["Close"].rolling(50).mean()
         delta = data["Close"].diff(1)
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = abs(delta.clip(upper=0)).rolling(14).mean()
         data["RSI_14"] = 100 - (100 / (1 + gain / loss))
         
-        st.success(f"✅ Loaded {len(data)} days for {ticker}")
+        # MACD
+        exp1 = data["Close"].ewm(span=12, adjust=False).mean()
+        exp2 = data["Close"].ewm(span=26, adjust=False).mean()
+        data["MACD"] = exp1 - exp2
+        data["MACD_signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
+        
+        # Bollinger Bands
+        data["BB_middle"] = data["Close"].rolling(20).mean()
+        data["BB_std"] = data["Close"].rolling(20).std()
+        data["BB_upper"] = data["BB_middle"] + 2 * data["BB_std"]
+        data["BB_lower"] = data["BB_middle"] - 2 * data["BB_std"]
+        
         return data
     except Exception:
         st.error(f"Could not load {ticker}")
@@ -90,14 +103,13 @@ def run_backtest(data):
 st.sidebar.header("Controls")
 ticker_input = st.sidebar.text_input("Enter tickers (comma separated)", value="AAPL, NVDA, TSLA, F, SNX")
 tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
-
 years = st.sidebar.slider("History (years)", 1, 10, 10)
 
 if st.sidebar.button("🔄 Refresh All Data"):
     st.cache_data.clear()
     st.rerun()
 
-with st.spinner("📥 Loading market data..."):
+with st.spinner("📥 Loading market data for all tickers..."):
     data_dict = {t: get_data(t, years) for t in tickers if t}
 
 st.success("✅ All data loaded")
@@ -113,7 +125,7 @@ with tab1:
                 latest = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                # Force clean Python scalars (this fixes the Series error permanently)
+                # ← HARDENED SCALAR FIX (this was the main crash)
                 price = float(latest['Close'].item() if hasattr(latest['Close'], 'item') else latest['Close'])
                 change = float(((latest['Close'] / prev['Close']) - 1) * 100)
                 rsi = float(latest.get('RSI_14', 50))
@@ -173,31 +185,27 @@ with tab4:
 
 with tab5:
     st.subheader("💬 Chat with Your Portfolio")
-    st.caption("Ask anything about your loaded tickers — powered by Groq (near-instant)")
-
+    st.caption("Ask anything about your loaded tickers in natural language — powered by Groq (near-instant)")
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-
     if prompt := st.chat_input("Ask about your portfolio (e.g. 'Why is SNX flashing a SELL signal?' or 'What is the heaviest sector exposure?')"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
+        
         context = "Current portfolio tickers: " + ", ".join(tickers) + "\n"
         for t, df in data_dict.items():
             if len(df) > 1:
                 latest = df.iloc[-1]
                 change = ((latest['Close']/df.iloc[-2]['Close'])-1)*100
                 context += f"{t}: Price ${float(latest['Close']):.2f}, % Change {change:.1f}%, RSI {float(latest.get('RSI_14', 50)):.1f}\n"
-
+        
         full_prompt = f"""You have access to the following real-time portfolio data:
 {context}
-
 User question: {prompt}
-
 Answer clearly, professionally, and data-driven."""
-
+        
         with st.spinner("Thinking..."):
             try:
                 completion = groq_client.chat.completions.create(
@@ -209,10 +217,11 @@ Answer clearly, professionally, and data-driven."""
                 response = completion.choices[0].message.content
             except Exception as e:
                 response = f"Groq error: {e}"
-
+        
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         with st.chat_message("assistant"):
             st.markdown(response)
 
 st.sidebar.success(f"✅ Loaded {len(tickers)} tickers")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+EOF
