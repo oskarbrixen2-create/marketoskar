@@ -113,12 +113,14 @@ with tab1:
                 latest = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                # Force clean scalars (this fixes the Series error)
-                price = float(latest['Close'])
+                # Force clean Python scalars (this fixes the Series error permanently)
+                price = float(latest['Close'].item() if hasattr(latest['Close'], 'item') else latest['Close'])
                 change = float(((latest['Close'] / prev['Close']) - 1) * 100)
                 rsi = float(latest.get('RSI_14', 50))
+                if pd.isna(rsi):
+                    rsi = 50.0
                 
-                if pd.isna(rsi) or rsi > 70:
+                if rsi > 70:
                     signal = "🔴 SELL"
                 elif rsi < 30:
                     signal = "🟢 STRONG BUY"
@@ -128,12 +130,7 @@ with tab1:
                 rows.append([t, price, change, rsi, signal])
         
         comparison_df = pd.DataFrame(rows, columns=["Ticker", "Price", "% Change", "RSI", "Signal"])
-        
-        # Safe display without .style.format
-        st.dataframe(
-            comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%"}),
-            use_container_width=True
-        )
+        st.dataframe(comparison_df.style.format({"Price": "${:.2f}", "% Change": "{:.1f}%"}), use_container_width=True)
 
         st.subheader("Correlation & Risk Heatmap")
         prices = pd.DataFrame({t: df['Close'] for t, df in data_dict.items() if not df.empty})
